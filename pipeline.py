@@ -22,7 +22,8 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 import google.generativeai as genai
 from urllib.parse import urlparse
-
+from pyvi import ViTokenizer
+from stopwordsiso import stopwords
 # --- CẤU HÌNH -----------------------------------------------------------------
 warnings.filterwarnings('ignore')
 
@@ -40,14 +41,15 @@ except TypeError: # Bỏ qua nếu chạy trên môi trường không hỗ trợ
 
 # Các nguồn RSS để thu thập dữ liệu
 RSS_URLS = [
-    "https://thanhnien.vn/rss/home.rss",
-    "https://tuoitre.vn/rss/tin-moi-nhat.rss",
+    "https://dantri.com.vn/rss/tin-moi-nhat.rss",
     "https://vnexpress.net/rss/tin-moi-nhat.rss",
+    "https://tuoitre.vn/rss/tin-moi-nhat.rss",
+    "https://thanhnien.vn/rss/home.rss",
 ]
 
-# Cấu hình cho các mô hình
+# Cấu hình cho các mô hìnhgit 
 NUM_CLUSTERS = 12
-SBERT_MODEL = 'vinai/phobert-base-v2'
+SBERT_MODEL = 'Cloyne/vietnamese-sbert-v3'
 
 # --- KIỂM TRA VÀ CẤU HÌNH API KEY (PHẦN GỠ LỖI) ----------------------------
 print("--- KIỂM TRA API KEY ---")
@@ -121,15 +123,46 @@ def fetch_recent_articles(hours=24):
     return pd.DataFrame(articles)
 
 def clean_text(df):
-    """Làm sạch văn bản tóm tắt."""
-    print("2/6: Đang làm sạch văn bản...")
-    df['summary_cleaned'] = df['summary_raw'].str.lower().str.replace(r'<.*?>', '', regex=True)
-    df['summary_cleaned'] = df['summary_cleaned'].str.replace(r'[^\w\s]', '', regex=True)
-    df.dropna(subset=['summary_cleaned'], inplace=True)
-    df = df[df['summary_cleaned'].str.strip() != ''].reset_index(drop=True)
-    print("-> Làm sạch văn bản hoàn tất.")
-    return df
+    """
+    Làm sạch và xử lý văn bản từ cột 'summary_raw':
+    - Chuyển chữ thường, bỏ HTML, dấu câu.
+    - Bỏ bài ngắn (<10 từ).
+    - Tách từ tiếng Việt bằng pyvi.
+    - Bỏ stopword.
+    """
+    print("\n2. Đang làm sạch văn bản...")
+    
 
+    # B1: Làm sạch văn bản cơ bản
+    summary = (df['summary_raw']
+               .str.lower()
+               .str.replace(r'<.*?>', '', regex=True)
+               .str.replace(r'[^\w\s]', '', regex=True))
+    df['summary_cleaned'] = summary
+
+    # B2: Bỏ NaN, dòng rỗng
+    df.dropna(subset=['summary_cleaned'], inplace=True)
+    df = df[df['summary_cleaned'].str.strip() != '']
+
+    # B3: Lọc bài có < 10 từ
+    original_count = len(df)
+    df = df[df['summary_cleaned']
+                      .str.split()
+                      .str.len() >= 10]
+    print(f"-> Đã lọc {original_count - len(df)} bài quá ngắn.")
+
+    # B4: Tokenize + bỏ stopword
+    vi_stop = stopwords("vi")
+    def remove_stop_pyvi(text):
+        tokens = ViTokenizer.tokenize(text).split()
+        filtered = [t for t in tokens if t not in vi_stop]
+        return " ".join(filtered)
+
+    df['summary_not_stop_word'] = df['summary_cleaned'].apply(remove_stop_pyvi)
+
+    df = df.reset_index(drop=True)
+    print("-> Hoàn tất làm sạch.")
+    return df
 def vectorize_text(sentences, model_name):
     """Vector hóa câu bằng S-BERT."""
     print(f"3/6: Đang vector hóa văn bản bằng mô hình {model_name}...")
@@ -188,7 +221,7 @@ def main_pipeline():
         print("Không có bài viết mới nào. Dừng quy trình.")
         return
     df = clean_text(df)
-    embeddings = vectorize_text(df['summary_cleaned'].tolist(), SBERT_MODEL)
+    embeddings = vectorize_text(df['summary_not_stop_word'].tolist(), SBERT_MODEL)
     
     print("Đang thực hiện phân cụm...")
     kmeans = KMeans(n_clusters=NUM_CLUSTERS, random_state=42, n_init=10)
