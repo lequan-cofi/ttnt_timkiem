@@ -44,7 +44,7 @@ RSS_URLS = [
 # Cấu hình cho các mô hình
 NUM_CLUSTERS = 12
 SBERT_MODEL = 'vinai/phobert-base-v2'
-GOOGLE_API_KEY = "api-gểnmi-key"  # API KEY CỦA BẠN
+GOOGLE_API_KEY = "AIzaSyDKyyy96xtF12KyydbcuAamfIZv0Rz0_Os"  # API KEY CỦA BẠN
 
 # --- KIỂM TRA VÀ CẤU HÌNH API KEY (PHẦN GỠ LỖI) ----------------------------
 print("--- KIỂM TRA API KEY ---")
