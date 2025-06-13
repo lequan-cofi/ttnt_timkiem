@@ -1,0 +1,128 @@
+/* --- Cài đặt chung --- */
+a, a:visited, a:active {
+    text-decoration: none !important;
+    color: inherit; /* Kế thừa màu từ thẻ cha */
+}
+
+a:hover {
+    text-decoration: none !important;
+    opacity: 0.8; /* Hiệu ứng mờ nhẹ khi di chuột */
+}
+
+/* --- Menu Sidebar Mới --- */
+.sidebar-nav {
+    margin-top: 15px; /* Thêm khoảng cách với các mục ở trên */
+}
+
+.sidebar-item {
+    display: flex;         /* Sử dụng flexbox để căn chỉnh icon và chữ */
+    align-items: center;   /* Căn giữa theo chiều dọc */
+    padding: 12px 15px;
+    margin-bottom: 8px;
+    border-radius: 8px;
+    color: #333;           /* Màu chữ xám đậm */
+    background-color: #394152; /* Nền xám rất nhạt */
+    transition: background-color 0.2s ease-in-out, color 0.2s ease-in-out;
+    font-weight: 500;
+    opacity: 1.0; /* Ghi đè hiệu ứng opacity chung */
+}
+
+.sidebar-item:hover {
+    background-color: #e9ecef; /* Màu nền đậm hơn khi di chuột */
+    color: #000000;      /* Chữ đen */
+    opacity: 1.0;
+    border-color: #ced4da;
+}
+
+/* Kiểu cho mục đang được chọn (active) */
+.sidebar-item.active {
+    background-color: #007bff; /* Màu xanh dương nổi bật */
+    color: white;             /* Chữ trắng */
+    border-color: #007bff;    /* Viền cùng màu */
+    font-weight: 600;         /* Chữ đậm hơn */
+}
+.sidebar-item.active:hover {
+    background-color: #0069d9; /* Màu xanh đậm hơn một chút khi di chuột */
+    border-color: #0062cc;
+}
+
+/* --- Giao diện thẻ bài viết (giữ nguyên) --- */
+.article-card {
+    border-radius: 8px;
+    box-shadow: 0 4px 8px 0 rgba(0,0,0,0.1);
+    transition: all 0.3s ease-in-out;
+    margin-bottom: 25px;
+    background-color: #444653;
+    overflow: hidden;
+    height: 400px;
+    display: flex;
+    flex-direction: column;
+    text-decoration: none;
+    border: 1px solid #000000;
+    color: #e0e0e0;
+}
+
+.article-card:hover {
+    box-shadow: 0 8px 16px 0 rgba(0,0,0,0.2);
+    transform: translateY(-5px);
+    text-decoration: none;
+}
+
+.card-image-container {
+    width: 100%;
+    height: 200px;
+    overflow: hidden;
+}
+
+.article-card img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: transform 0.3s ease;
+}
+
+.article-card:hover img {
+    transform: scale(1.05);
+}
+
+.article-content {
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    flex-grow: 1;
+}
+
+.article-title {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: #ffffff; /* Thay đổi màu cho phù hợp nền trắng */
+    margin-bottom: 10px;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    height: 70px;
+}
+
+.article-source {
+    font-size: 0.8rem;
+    font-weight: bold;
+    color: #b8b7b7; /* Màu xám cho nguồn tin */
+    text-transform: uppercase;
+}
+
+/* Nút quay lại trên trang chi tiết */
+.back-button {
+    margin-bottom: 20px;
+    font-size: 1.1rem;
+}
+.back-button a {
+    color: #007bff;
+    font-weight: 500;
+}
+.back-button a:hover {
+    color: #0056b3;
+    opacity: 1.0;
+}
