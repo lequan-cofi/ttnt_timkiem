@@ -92,13 +92,7 @@ def render_detail_view(article_id, df, cosine_sim, topic_labels):
     st.markdown("---")
     col1, col2 = st.columns([0.6, 0.4])
     with col1:
-        if pd.notna(article['image_url']):
-            try:
-                # Thêm proxy cho hình ảnh để tránh CORS
-                proxy_url = f"https://images.weserv.nl/?url={article['image_url']}"
-                st.image(proxy_url, use_column_width=True, on_click=lambda: None)
-            except:
-                st.image("https://via.placeholder.com/800x450?text=Không+có+hình+ảnh", use_column_width=True)
+        if pd.notna(article['image_url']): st.image(article['image_url'])
         st.subheader("Tóm tắt")
         summary_raw = article.get('summary_raw', '')
         summary_without_img = re.sub(r'<img[^>]*>', '', summary_raw, flags=re.IGNORECASE)
