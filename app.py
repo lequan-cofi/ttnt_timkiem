@@ -73,7 +73,9 @@ def render_detail_view(article_id, df, cosine_sim, topic_labels):
         return
     st.markdown('<a href="/" target="_self">⬅️ Quay lại danh sách</a>', unsafe_allow_html=True)
     st.title(article['title'])
-    st.caption(f"Nguồn: {article['source_name']} | Xuất bản: {article['published_time'].strftime('%d-%m-%Y %H:%M')}")
+    # Hiển thị thời gian theo múi giờ Việt Nam
+    vn_time = article['published_time'].tz_convert('Asia/Ho_Chi_Minh')
+    st.caption(f"Nguồn: {article['source_name']} | Xuất bản: {vn_time.strftime('%d-%m-%Y %H:%M')}")
     st.markdown("---")
     col1, col2 = st.columns([0.6, 0.4])
     with col1:

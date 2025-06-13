@@ -81,7 +81,9 @@ def fetch_recent_articles(hours=24):
     """Lấy các bài viết mới từ RSS và trích xuất URL hình ảnh, tên nguồn."""
     print(f"\n1/6: Bắt đầu lấy các bài viết trong vòng {hours} giờ qua...")
     articles = []
-    time_threshold = datetime.now(timezone.utc) - timedelta(hours=hours)
+    # Sử dụng múi giờ Việt Nam (UTC+7)
+    vn_timezone = timezone(timedelta(hours=7))
+    time_threshold = datetime.now(vn_timezone) - timedelta(hours=hours)
     for url in RSS_URLS:
         feed = feedparser.parse(url)
         for entry in feed.entries:
@@ -99,13 +101,14 @@ def fetch_recent_articles(hours=24):
 
             if published_time:
                 try:
-                    parsed_time = parse_date(published_time).astimezone(timezone.utc)
+                    # Parse thời gian và chuyển sang múi giờ Việt Nam
+                    parsed_time = parse_date(published_time).astimezone(vn_timezone)
                     if parsed_time >= time_threshold:
                         articles.append({
                             "title": entry.title, "link": entry.link,
                             "summary_raw": summary_raw, "published_time": parsed_time.isoformat(),
                             "image_url": image_url,
-                            "source": source_name  # Thêm nguồn vào đây
+                            "source": source_name
                         })
                 except (ValueError, TypeError):
                     continue
@@ -172,7 +175,7 @@ def get_topic_labels(df, num_keywords=5):
 
 def main_pipeline():
     """Hàm chính chạy toàn bộ quy trình."""
-    print("\n🚀 BẮT ĐẦU QUY TRÌNH TỰ ĐỘNG HÓA �")
+    print("\n🚀 BẮT ĐẦU QUY TRÌNH TỰ ĐỘNG HÓA")
     
     # Các bước giữ nguyên
     df = fetch_recent_articles(hours=24)
