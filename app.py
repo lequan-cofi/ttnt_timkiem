@@ -69,9 +69,11 @@ def render_detail_view(article_id, df, cosine_sim, topic_labels):
         article = df.loc[article_id]
     except KeyError:
         st.error("Không tìm thấy bài viết.")
-        st.markdown('<a href="/" target="_self">⬅️ Quay lại trang chính</a>', unsafe_allow_html=True)
+        st.markdown('<a href="javascript:history.back()" target="_self">⬅️ Quay lại trang chính</a>', unsafe_allow_html=True)
         return
-    st.markdown('<a href="/" target="_self">⬅️ Quay lại danh sách</a>', unsafe_allow_html=True)
+    
+    # Sử dụng JavaScript để quay lại trang trước
+    st.markdown('<a href="javascript:history.back()" target="_self">⬅️ Quay lại danh sách</a>', unsafe_allow_html=True)
     st.title(article['title'])
     # Hiển thị thời gian theo múi giờ Việt Nam
     vn_time = article['published_time'].tz_convert('Asia/Ho_Chi_Minh')

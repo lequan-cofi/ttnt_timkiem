@@ -6,6 +6,7 @@ import time
 import warnings
 import sys
 import os # Thêm thư viện os
+from dotenv import load_dotenv
 
 # --- SỬA LỖI SUBPROCESS/JOBLIB TRÊN WINDOWS ---
 # Đặt một giá trị cố định cho số lõi CPU để tránh lỗi khi joblib/loky
@@ -24,6 +25,9 @@ from urllib.parse import urlparse
 
 # --- CẤU HÌNH -----------------------------------------------------------------
 warnings.filterwarnings('ignore')
+
+# Load environment variables from .env file
+load_dotenv()
 
 # >>> SỬA LỖI UNICODE TRÊN WINDOWS CONSOLE <<<
 # Buộc output của chương trình phải là UTF-8 để hiển thị tiếng Việt chính xác
@@ -44,20 +48,21 @@ RSS_URLS = [
 # Cấu hình cho các mô hình
 NUM_CLUSTERS = 12
 SBERT_MODEL = 'vinai/phobert-base-v2'
-GOOGLE_API_KEY = "AIzaSyDKyyy96xtF12KyydbcuAamfIZv0Rz0_Os"  # API KEY CỦA BẠN
 
 # --- KIỂM TRA VÀ CẤU HÌNH API KEY (PHẦN GỠ LỖI) ----------------------------
 print("--- KIỂM TRA API KEY ---")
-if not GOOGLE_API_KEY or "DÁN_API_KEY" in GOOGLE_API_KEY:
-    print("❌ LỖI: API Key chưa được dán vào file pipeline.py.")
-    print("Vui lòng mở file, tìm dòng GOOGLE_API_KEY và dán key của bạn vào giữa dấu ngoặc kép.")
+api_key = os.getenv("GOOGLE_API_KEY")
+if not api_key:
+    print("❌ LỖI: Không tìm thấy API Key trong biến môi trường.")
+    print("Vui lòng tạo file .env và thêm dòng sau:")
+    print("GOOGLE_API_KEY=your_api_key_here")
     exit()  # Dừng chương trình ngay lập tức
 else:
     # In ra một phần của key để xác nhận
-    print(f"✅ Đã tìm thấy API Key. Bắt đầu bằng: '{GOOGLE_API_KEY[:4]}...'. Kết thúc bằng: '...{GOOGLE_API_KEY[-4:]}'.")
+    print(f"✅ Đã tìm thấy API Key. Bắt đầu bằng: '{api_key[:4]}...'. Kết thúc bằng: '...{api_key[-4:]}'.")
     print("Đang cấu hình với Google...")
     try:
-        genai.configure(api_key=GOOGLE_API_KEY)
+        genai.configure(api_key=api_key)
         print("✅ Cấu hình Google API thành công.")
     except Exception as e:
         print(f"❌ LỖI KHI CẤU HÌNH: {e}")
