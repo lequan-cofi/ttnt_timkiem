@@ -52,7 +52,18 @@ def render_main_grid(df, selected_topic_name):
     else:
         for i, (index, row) in enumerate(df.iterrows()):
             with cols[i % num_columns]:
-                image_html = f'<div class="card-image-container"><img src="{row["image_url"]}"></div>' if pd.notna(row["image_url"]) else '<div class="card-image-container" style="background-color:#f0f2f6;"></div>'
+                # Xử lý hình ảnh với placeholder
+                image_html = ''
+                if pd.notna(row["image_url"]):
+                    try:
+                        # Thêm proxy cho hình ảnh để tránh CORS
+                        proxy_url = f"https://images.weserv.nl/?url={row['image_url']}"
+                        image_html = f'<div class="card-image-container"><img src="{proxy_url}" onerror="this.onerror=null; this.src=\'https://via.placeholder.com/400x225?text=Không+có+hình+ảnh\';"></div>'
+                    except:
+                        image_html = '<div class="card-image-container" style="background-color:#f0f2f6;"><img src="https://via.placeholder.com/400x225?text=Không+có+hình+ảnh"></div>'
+                else:
+                    image_html = '<div class="card-image-container" style="background-color:#f0f2f6;"><img src="https://via.placeholder.com/400x225?text=Không+có+hình+ảnh"></div>'
+                
                 # Sử dụng cột 'source_name' đã tạo
                 source_name = row['source_name']
                 card_html = f"""<a href="?article_id={index}" target="_self" class="article-card">
@@ -81,7 +92,13 @@ def render_detail_view(article_id, df, cosine_sim, topic_labels):
     st.markdown("---")
     col1, col2 = st.columns([0.6, 0.4])
     with col1:
-        if pd.notna(article['image_url']): st.image(article['image_url'])
+        if pd.notna(article['image_url']):
+            try:
+                # Thêm proxy cho hình ảnh để tránh CORS
+                proxy_url = f"https://images.weserv.nl/?url={article['image_url']}"
+                st.image(proxy_url, use_column_width=True, on_click=lambda: None)
+            except:
+                st.image("https://via.placeholder.com/800x450?text=Không+có+hình+ảnh", use_column_width=True)
         st.subheader("Tóm tắt")
         summary_raw = article.get('summary_raw', '')
         summary_without_img = re.sub(r'<img[^>]*>', '', summary_raw, flags=re.IGNORECASE)
