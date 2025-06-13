@@ -55,9 +55,9 @@ def render_main_grid(df, selected_topic_name):
                 # Xử lý hình ảnh với placeholder
                 image_html = ''
                 if pd.notna(row["image_url"]):
-                    image_html = f'<div class="card-image-container"><img src="{row["image_url"]}" onerror="this.onerror=null; this.src=\'https://www.ncenet.com/wp-content/uploads/2020/04/no-image-png-2.png\';"></div>'
+                    image_html = f'<div class="card-image-container"><img src="{row["image_url"]}" onerror="this.onerror=null; this.src=\'no-image-png-2.webp\';"></div>'
                 else:
-                    image_html = '<div class="card-image-container"><img src="https://www.ncenet.com/wp-content/uploads/2020/04/no-image-png-2.png"></div>'
+                    image_html = '<div class="card-image-container"><img src="no-image-png-2.webp"></div>'
                 
                 # Sử dụng cột 'source_name' đã tạo
                 source_name = row['source_name']
@@ -88,9 +88,9 @@ def render_detail_view(article_id, df, cosine_sim, topic_labels):
     col1, col2 = st.columns([0.6, 0.4])
     with col1:
         if pd.notna(article['image_url']):
-            st.markdown(f'<img src="{article["image_url"]}" onerror="this.onerror=null; this.src=\'https://www.ncenet.com/wp-content/uploads/2020/04/no-image-png-2.png\';" style="width:100%;">', unsafe_allow_html=True)
+            st.markdown(f'<img src="{article["image_url"]}" onerror="this.onerror=null; this.src=\'no-image-png-2.webp\';" style="width:100%;">', unsafe_allow_html=True)
         else:
-            st.markdown('<img src="https://www.ncenet.com/wp-content/uploads/2020/04/no-image-png-2.png" style="width:100%;">', unsafe_allow_html=True)
+            st.markdown('<img src="no-image-png-2.webp" style="width:100%;">', unsafe_allow_html=True)
         st.subheader("Tóm tắt")
         summary_raw = article.get('summary_raw', '')
         summary_without_img = re.sub(r'<img[^>]*>', '', summary_raw, flags=re.IGNORECASE)
@@ -108,9 +108,9 @@ def render_detail_view(article_id, df, cosine_sim, topic_labels):
                     rec_col1, rec_col2 = st.columns([0.25, 0.75])
                     with rec_col1:
                         if pd.notna(rec_article['image_url']):
-                            st.markdown(f'<img src="{rec_article["image_url"]}" onerror="this.onerror=null; this.src=\'https://www.ncenet.com/wp-content/uploads/2020/04/no-image-png-2.png\';" style="width:100%;">', unsafe_allow_html=True)
+                            st.markdown(f'<img src="{rec_article["image_url"]}" onerror="this.onerror=null; this.src=\'no-image-png-2.webp\';" style="width:100%;">', unsafe_allow_html=True)
                         else:
-                            st.markdown('<img src="https://www.ncenet.com/wp-content/uploads/2020/04/no-image-png-2.png" style="width:100%;">', unsafe_allow_html=True)
+                            st.markdown('<img src="no-image-png-2.webp" style="width:100%;">', unsafe_allow_html=True)
                     with rec_col2:
                         st.markdown(f"<a href='?article_id={article_index}' target='_self'>{rec_article['title']}</a>", unsafe_allow_html=True)
                         st.caption(f"Độ tương đồng: {score:.2f}")
@@ -124,9 +124,9 @@ def render_detail_view(article_id, df, cosine_sim, topic_labels):
                     rec_col1, rec_col2 = st.columns([0.25, 0.75])
                     with rec_col1:
                         if pd.notna(row['image_url']):
-                            st.markdown(f'<img src="{row["image_url"]}" onerror="this.onerror=null; this.src=\'https://www.ncenet.com/wp-content/uploads/2020/04/no-image-png-2.png\';" style="width:100%;">', unsafe_allow_html=True)
+                            st.markdown(f'<img src="{row["image_url"]}" onerror="this.onerror=null; this.src=\'no-image-png-2.webp\';" style="width:100%;">', unsafe_allow_html=True)
                         else:
-                            st.markdown('<img src="https://www.ncenet.com/wp-content/uploads/2020/04/no-image-png-2.png" style="width:100%;">', unsafe_allow_html=True)
+                            st.markdown('<img src="no-image-png-2.webp" style="width:100%;">', unsafe_allow_html=True)
                     with rec_col2:
                         st.markdown(f"<a href='?article_id={i}' target='_self'>{row['title']}</a>", unsafe_allow_html=True)
                         st.caption(f"Nguồn: {row['source_name']}")
