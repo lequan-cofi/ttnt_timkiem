@@ -6,9 +6,24 @@ import re
 import sys
 import subprocess
 from urllib.parse import urlparse, quote, unquote
+from sklearn.metrics.pairwise import cosine_similarity
 
 # --- CẤU HÌNH TRANG VÀ CSS ---
 st.set_page_config(page_title="Tạp chí của bạn", page_icon="📖", layout="wide")
+
+# Initialize session state
+if 'read_articles' not in st.session_state:
+    st.session_state.read_articles = set()
+if 'reading_history' not in st.session_state:
+    st.session_state.reading_history = []  # List to store all read articles
+if 'current_view' not in st.session_state:
+    st.session_state.current_view = "main"  # "main" or "detail"
+if 'current_article_id' not in st.session_state:
+    st.session_state.current_article_id = None
+if 'selected_topic' not in st.session_state:
+    st.session_state.selected_topic = "Dành cho bạn (Tất cả)"
+if 'selected_sources' not in st.session_state:
+    st.session_state.selected_sources = []
 
 def local_css(file_name):
     try:
@@ -61,27 +76,130 @@ def render_main_grid(df, selected_topic_name):
                 
                 # Sử dụng cột 'source_name' đã tạo
                 source_name = row['source_name']
-                card_html = f"""<a href="?article_id={index}" target="_self" class="article-card">
-                                    {image_html}
-                                    <div class="article-content">
-                                        <div class="article-title">{row['title']}</div>
-                                        <div class="article-source">{source_name}</div>
-                                    </div>
-                               </a>"""
+                card_html = f"""<div class="article-card">
+                                {image_html}
+                                <div class="article-content">
+                                    <div class="article-title">{row['title']}</div>
+                                    <div class="article-source">{source_name}</div>
+                                </div>
+                           </div>"""
                 st.markdown(card_html, unsafe_allow_html=True)
+                if st.button("Đọc bài viết", key=f"read_{index}"):
+                    st.session_state.current_article_id = index
+                    st.session_state.current_view = "detail"
+                    st.rerun()
+
+def calculate_interest_vector(df, cosine_sim, article_ids):
+    """Calculate interest vector from reading history."""
+    if not article_ids:
+        return None
+    
+    # Get vectors for articles in history
+    vectors = []
+    for article_id in article_ids:
+        if article_id < len(cosine_sim):
+            vectors.append(cosine_sim[article_id])
+    
+    if not vectors:
+        return None
+    
+    # Calculate average vector
+    avg_vector = np.mean(vectors, axis=0)
+    return avg_vector
+
+def update_interest_vector(df, cosine_sim, article_id):
+    """Update interest vector when new article is read."""
+    if article_id not in st.session_state.reading_history:
+        # Add to reading history (keep last 5)
+        st.session_state.reading_history.insert(0, article_id)
+        st.session_state.reading_history = st.session_state.reading_history[:5]
+        
+        # Calculate new interest vector
+        st.session_state.interest_vector = calculate_interest_vector(
+            df, cosine_sim, st.session_state.reading_history
+        )
+        
+        # Update interest articles if vector exists
+        if st.session_state.interest_vector is not None:
+            similarity_scores = cosine_similarity([st.session_state.interest_vector], cosine_sim)[0]
+            # Create mask to exclude read articles
+            mask = ~df.index.isin(st.session_state.reading_history)
+            similarity_scores[~mask] = -1  # Set similarity to -1 for read articles
+            # Get top similar articles
+            top_indices = np.argsort(similarity_scores)[::-1][:10]
+            st.session_state.interest_articles = df.iloc[top_indices].copy()
+            st.session_state.interest_articles['similarity_score'] = similarity_scores[top_indices]
+
+def get_interest_articles():
+    """Get articles based on user's interests."""
+    if st.session_state.interest_articles is not None:
+        return st.session_state.interest_articles
+    return pd.DataFrame()
+
+def calculate_average_vector(article_ids, cosine_sim):
+    """Calculate average vector from last 5 articles."""
+    if not article_ids:
+        return None
+    
+    vectors = []
+    for article_id in article_ids:
+        if article_id < len(cosine_sim):
+            vectors.append(cosine_sim[article_id])
+    
+    if not vectors:
+        return None
+    
+    return np.mean(vectors, axis=0)
+
+def get_similar_articles_by_history(df, cosine_sim, history_articles, exclude_articles=None):
+    """Get similar articles based on reading history."""
+    if not history_articles:
+        return pd.DataFrame()
+    
+    # Chỉ lấy 5 bài viết mới đọc gần nhất
+    recent_articles = history_articles[:5]
+    
+    avg_vector = calculate_average_vector(recent_articles, cosine_sim)
+    if avg_vector is None:
+        return pd.DataFrame()
+    
+    # Calculate similarity scores
+    similarity_scores = cosine_similarity([avg_vector], cosine_sim)[0]
+    
+    # Create mask to exclude read articles
+    if exclude_articles:
+        mask = ~df.index.isin(exclude_articles)
+        similarity_scores[~mask] = -1
+    
+    # Get top similar articles
+    top_indices = np.argsort(similarity_scores)[::-1][:10]
+    similar_articles = df.iloc[top_indices].copy()
+    similar_articles['similarity_score'] = similarity_scores[top_indices]
+    
+    return similar_articles
 
 def render_detail_view(article_id, df, cosine_sim, topic_labels):
     try:
         article = df.loc[article_id]
     except KeyError:
         st.error("Không tìm thấy bài viết.")
-        st.markdown('<a href="javascript:history.back()" target="_self">⬅️ Quay lại trang chính</a>', unsafe_allow_html=True)
+        if st.button("⬅️ Quay lại danh sách"):
+            st.session_state.current_view = "main"
+            st.session_state.current_article_id = None
+            st.rerun()
         return
     
-    # Sử dụng JavaScript để quay lại trang trước
-    st.markdown('<a href="javascript:history.back()" target="_self">⬅️ Quay lại danh sách</a>', unsafe_allow_html=True)
+    # Add article to read articles set and update reading history
+    st.session_state.read_articles.add(article_id)
+    if article_id not in st.session_state.reading_history:
+        st.session_state.reading_history.insert(0, article_id)  # Add to history without limit
+    
+    if st.button("⬅️ Quay lại danh sách"):
+        st.session_state.current_view = "main"
+        st.session_state.current_article_id = None
+        st.rerun()
+    
     st.title(article['title'])
-    # Hiển thị thời gian theo múi giờ Việt Nam
     vn_time = article['published_time'].tz_convert('Asia/Ho_Chi_Minh')
     st.caption(f"Nguồn: {article['source_name']} | Xuất bản: {vn_time.strftime('%d-%m-%Y %H:%M')}")
     st.markdown("---")
@@ -99,6 +217,7 @@ def render_detail_view(article_id, df, cosine_sim, topic_labels):
     with col2:
         st.subheader("Khám phá thêm")
         rec_type = st.radio("Hiển thị các bài viết:", ("Có nội dung tương tự", "Trong cùng chủ đề"), key=f"rec_type_{article_id}")
+        
         if rec_type == "Có nội dung tương tự":
             st.markdown("##### Dựa trên phân tích ngữ nghĩa:")
             sim_scores = sorted(list(enumerate(cosine_sim[article_id])), key=lambda x: x[1], reverse=True)[1:6]
@@ -112,7 +231,9 @@ def render_detail_view(article_id, df, cosine_sim, topic_labels):
                         else:
                             st.markdown('<img src="no-image-png-2.webp" style="width:100%;">', unsafe_allow_html=True)
                     with rec_col2:
-                        st.markdown(f"<a href='?article_id={article_index}' target='_self'>{rec_article['title']}</a>", unsafe_allow_html=True)
+                        if st.button(rec_article['title'], key=f"rec_{article_index}"):
+                            st.session_state.current_article_id = article_index
+                            st.rerun()
                         st.caption(f"Độ tương đồng: {score:.2f}")
         else: # Cùng chủ đề
             cluster_id = article['topic_cluster']
@@ -128,7 +249,9 @@ def render_detail_view(article_id, df, cosine_sim, topic_labels):
                         else:
                             st.markdown('<img src="no-image-png-2.webp" style="width:100%;">', unsafe_allow_html=True)
                     with rec_col2:
-                        st.markdown(f"<a href='?article_id={i}' target='_self'>{row['title']}</a>", unsafe_allow_html=True)
+                        if st.button(row['title'], key=f"rec_{i}"):
+                            st.session_state.current_article_id = i
+                            st.rerun()
                         st.caption(f"Nguồn: {row['source_name']}")
 
 # --- LUỒNG CHÍNH CỦA ỨNG DỤNG ---
@@ -142,10 +265,17 @@ if 'update_error' not in st.session_state:
 if 'update_success' not in st.session_state:
     st.session_state.update_success = False
 
+# Initialize session state for reading history and interest tracking
+if 'reading_history' not in st.session_state:
+    st.session_state.reading_history = []
+if 'interest_vector' not in st.session_state:
+    st.session_state.interest_vector = None
+if 'interest_articles' not in st.session_state:
+    st.session_state.interest_articles = None
+
 df, cosine_sim, topic_labels = load_data()
 
 # --- GIAO DIỆN THANH BÊN ---
-# st.sidebar.image("https://static.vecteezy.com/system/resources/previews/023/388/587/original/paper-icon-vector.jpg", width=100)
 st.sidebar.title("Tạp chí của bạn")
 st.sidebar.markdown("---")
 
@@ -184,17 +314,16 @@ if df is None:
 else:
     # --- PHẦN LỌC THEO CHỦ ĐỀ ---
     st.sidebar.subheader("Khám phá các chủ đề")
-    topic_display_list = ["Dành cho bạn (Tất cả)"] + [v for k, v in topic_labels.items()]
-    query_params = st.query_params
-    selected_topic_display = unquote(query_params.get("topic", topic_display_list[0]))
+    topic_display_list = ["Dành cho bạn (Tất cả)", "Bài viết đã đọc", "Dựa trên lịch sử đọc"] + [v for k, v in topic_labels.items()]
+    
     st.sidebar.markdown('<div class="sidebar-nav">', unsafe_allow_html=True)
     for topic in topic_display_list:
-        is_active = (topic == selected_topic_display)
+        is_active = (topic == st.session_state.selected_topic)
         active_class = "active" if is_active else ""
-        topic_url = quote(topic)
-        link = f'/?topic={topic_url}'
-        icon = "📖"
-        st.sidebar.markdown(f'<a href="{link}" target="_self" class="sidebar-item {active_class}">{icon} &nbsp; {topic}</a>', unsafe_allow_html=True)
+        icon = "📖" if topic != "Bài viết đã đọc" and topic != "Dựa trên lịch sử đọc" else "👁️" if topic == "Bài viết đã đọc" else "🎯"
+        if st.sidebar.button(f"{icon} {topic}", key=f"topic_{topic}", use_container_width=True):
+            st.session_state.selected_topic = topic
+            st.rerun()
     st.sidebar.markdown('</div>', unsafe_allow_html=True)
     st.sidebar.markdown("---")
 
@@ -204,22 +333,43 @@ else:
     selected_sources = st.sidebar.multiselect(
         "Chọn một hoặc nhiều nguồn:",
         options=all_sources,
-        default=[] # Mặc định không chọn nguồn nào
+        default=st.session_state.selected_sources
     )
-    # --- KẾT THÚC PHẦN BỔ SUNG ---
+    
+    if selected_sources != st.session_state.selected_sources:
+        st.session_state.selected_sources = selected_sources
+        st.rerun()
 
     # --- HIỂN THỊ VIEW TƯƠNG ỨNG ---
-    if "article_id" in query_params:
-        try:
-            article_id = int(query_params.get("article_id"))
-            render_detail_view(article_id, df, cosine_sim, topic_labels)
-        except (ValueError, IndexError):
-            st.error("ID bài viết không hợp lệ.")
-            st.markdown('<a href="/" target="_self">⬅️ Quay lại trang chính</a>', unsafe_allow_html=True)
+    if st.session_state.current_view == "detail" and st.session_state.current_article_id is not None:
+        render_detail_view(st.session_state.current_article_id, df, cosine_sim, topic_labels)
     else:
         # Lọc theo chủ đề
-        if selected_topic_display != "Dành cho bạn (Tất cả)":
-            selected_key_list = [k for k, v in topic_labels.items() if v == selected_topic_display]
+        if st.session_state.selected_topic == "Bài viết đã đọc":
+            if st.session_state.read_articles:
+                # Lấy danh sách bài viết đã đọc theo thứ tự trong reading_history (mới nhất lên đầu)
+                ordered_articles = [article_id for article_id in st.session_state.reading_history if article_id in st.session_state.read_articles]
+                # Tạo DataFrame với thứ tự đã sắp xếp
+                display_df = df[df.index.isin(ordered_articles)].copy()
+                # Sắp xếp lại theo thứ tự trong ordered_articles
+                display_df = display_df.reindex(ordered_articles)
+            else:
+                display_df = pd.DataFrame()
+                st.info("Bạn chưa đọc bài viết nào.")
+        elif st.session_state.selected_topic == "Dựa trên lịch sử đọc":
+            if len(st.session_state.reading_history) > 0:
+                display_df = get_similar_articles_by_history(
+                    df, cosine_sim,
+                    st.session_state.reading_history,
+                    exclude_articles=st.session_state.read_articles
+                )
+                if display_df.empty:
+                    st.info("Không tìm thấy bài viết tương tự dựa trên lịch sử đọc.")
+            else:
+                display_df = pd.DataFrame()
+                st.info("Bạn chưa có lịch sử đọc bài viết nào.")
+        elif st.session_state.selected_topic != "Dành cho bạn (Tất cả)":
+            selected_key_list = [k for k, v in topic_labels.items() if v == st.session_state.selected_topic]
             if selected_key_list:
                 display_df = df[df['topic_cluster'] == int(selected_key_list[0])].copy()
             else:
@@ -227,10 +377,13 @@ else:
         else:
             display_df = df.copy()
 
-        # BỔ SUNG: Áp dụng bộ lọc nguồn
-        if selected_sources: # Nếu người dùng đã chọn ít nhất một nguồn
-            display_df = display_df[display_df['source_name'].isin(selected_sources)]
+        # Áp dụng bộ lọc nguồn
+        if st.session_state.selected_sources:
+            display_df = display_df[display_df['source_name'].isin(st.session_state.selected_sources)]
 
         # Sắp xếp và hiển thị
-        display_df = display_df.sort_values(by='published_time', ascending=False)
-        render_main_grid(display_df, selected_topic_display)
+        if not display_df.empty:
+            # Chỉ sắp xếp theo thời gian đăng nếu không phải là bài viết đã đọc
+            if st.session_state.selected_topic != "Bài viết đã đọc":
+                display_df = display_df.sort_values(by='published_time', ascending=False)
+        render_main_grid(display_df, st.session_state.selected_topic)
