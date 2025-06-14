@@ -41,7 +41,7 @@ except TypeError: # Bỏ qua nếu chạy trên môi trường không hỗ trợ
 
 # Các nguồn RSS để thu thập dữ liệu
 RSS_URLS = [
-    "https://dantri.com.vn/rss/tin-moi-nhat.rss",
+    "https://dantri.com.vn/rss/tam-diem.rss",
     "https://vnexpress.net/rss/tin-moi-nhat.rss",
     "https://tuoitre.vn/rss/tin-moi-nhat.rss",
     "https://thanhnien.vn/rss/home.rss",
