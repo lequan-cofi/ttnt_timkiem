@@ -7,7 +7,7 @@ import warnings
 import sys
 import os # Thêm thư viện os
 from dotenv import load_dotenv
-import html
+from concurrent.futures import ThreadPoolExecutor, as_completed
 # Xóa API key cũ từ biến môi trường nếu có
 if 'GOOGLE_API_KEY' in os.environ:
     del os.environ['GOOGLE_API_KEY']
@@ -197,72 +197,85 @@ def get_source_name(link):
         if domain.startswith('www.'):
             domain = domain[4:]
         return domain.split('.')[0].capitalize()
-    except:
+    except Exception:
+        # Bắt lỗi cụ thể hơn là một except rỗng
         return "N/A"
 
-def normalize_title(title):
-    return html.unescape(title).strip().lower()
-
-def fetch_recent_articles(rss_urls, hours=24):
+def _parse_feed(url):
     """
-    Hàm này lấy các bài viết mới từ danh sách các URL RSS trong 24h,
-    lọc bỏ các bài có tiêu đề hoặc link trùng lặp.
-
-    Args:
-        rss_urls (list): Danh sách các URL của RSS feed.
-        hours (int): Số giờ tính từ hiện tại để lấy bài viết.
-        
-    Returns:
-        pd.DataFrame: Một DataFrame chứa thông tin các bài viết duy nhất đã thu thập được.
+    Hàm phụ trợ: Tải và phân tích một URL RSS duy nhất.
+    Hàm này được thiết kế để chạy trong một luồng riêng.
     """
-    print(f"\n1. Bắt đầu lấy các bài viết trong vòng {hours} giờ qua...")
+    try:
+        print(f"   - Bắt đầu tải: {url}")
+        feed = feedparser.parse(url)
+        print(f"   - Hoàn tất tải: {url}")
+        return feed
+    except Exception as e:
+        print(f"   - LỖI khi tải {url}: {e}")
+        return None
+
+def fetch_recent_articles_optimized(rss_urls, hours=24):
+    """
+    Phiên bản tối ưu: Lấy bài viết từ nhiều RSS feed đồng thời,
+    lọc bỏ các bài có tiêu đề trùng lặp.
+    """
+    print(f"\n1. Bắt đầu lấy các bài viết trong vòng {hours} giờ qua (chế độ tối ưu)...")
     articles = []
-    
-    # Khởi tạo set để lưu các tiêu đề và link đã gặp
     seen_titles = set()
-    seen_links = set()
-    
-    # Đặt mốc thời gian giới hạn (chỉ lấy bài mới hơn mốc này)
     time_threshold = datetime.now(timezone.utc) - timedelta(hours=hours)
     
-    # Lặp qua từng URL trong danh sách
-    for url in rss_urls:
-        feed = feedparser.parse(url)
+    # --- TỐI ƯU HÓA: Sử dụng ThreadPoolExecutor để tải nhiều feed cùng lúc ---
+    parsed_feeds = []
+    with ThreadPoolExecutor(max_workers=10) as executor: # max_workers: số luồng chạy song song
+        # Tạo các tác vụ tải feed
+        future_to_url = {executor.submit(_parse_feed, url): url for url in rss_urls}
+        
+        # Lấy kết quả khi các tác vụ hoàn thành
+        for future in as_completed(future_to_url):
+            feed = future.result()
+            if feed: # Chỉ xử lý nếu feed được tải thành công
+                parsed_feeds.append(feed)
+
+    print("\n2. Đã tải xong các feed, bắt đầu xử lý và lọc bài viết...")
+    # Lặp qua các feed đã được tải về thành công
+    for feed in parsed_feeds:
         for entry in feed.entries:
-            norm_title = normalize_title(entry.title)
-            link = entry.link.strip()
-            # Kiểm tra trùng lặp cả tiêu đề và link
-            if norm_title in seen_titles or link in seen_links:
+            if entry.title in seen_titles:
                 continue
-            published_time = entry.get("published", "")
-            summary_raw = entry.get("summary", "")
-            image_url = None
-            # Trích xuất URL hình ảnh từ trong thẻ <img> của tóm tắt
-            if summary_raw:
-                soup = BeautifulSoup(summary_raw, 'html.parser')
-                img_tag = soup.find('img')
-                if img_tag and 'src' in img_tag.attrs:
-                    image_url = img_tag['src']
-            # Lấy tên nguồn từ link bài viết
-            source_name = get_source_name(entry.link)
-            # Xử lý và kiểm tra thời gian đăng bài
-            if published_time:
-                try:
-                    parsed_time = parse_date(published_time).astimezone(timezone.utc)
-                    if parsed_time >= time_threshold:
-                        articles.append({
-                            "title": entry.title,
-                            "link": entry.link,
-                            "summary_raw": summary_raw,
-                            "published_time": parsed_time.isoformat(),
-                            "image_url": image_url,
-                            "source": source_name
-                        })
-                        seen_titles.add(norm_title)
-                        seen_links.add(link)
-                except (ValueError, TypeError):
+
+            published_time_str = entry.get("published", "")
+            if not published_time_str:
+                continue
+
+            try:
+                parsed_time = parse_date(published_time_str).astimezone(timezone.utc)
+                if parsed_time < time_threshold:
                     continue
-    print(f"-> Đã tìm thấy {len(articles)} bài viết mới (sau khi lọc trùng lặp).")
+                    
+                # Thêm bài viết vào danh sách và đánh dấu tiêu đề đã gặp
+                summary_raw = entry.get("summary", "")
+                image_url = None
+                if summary_raw:
+                    soup = BeautifulSoup(summary_raw, 'html.parser')
+                    img_tag = soup.find('img')
+                    if img_tag and 'src' in img_tag.attrs:
+                        image_url = img_tag['src']
+                
+                articles.append({
+                    "title": entry.title,
+                    "link": entry.link,
+                    "summary_raw": summary_raw,
+                    "published_time": parsed_time.isoformat(),
+                    "image_url": image_url,
+                    "source": get_source_name(entry.link)
+                })
+                seen_titles.add(entry.title)
+
+            except (ValueError, TypeError):
+                continue
+                
+    print(f"\n-> Đã tìm thấy {len(articles)} bài viết mới (sau khi lọc trùng lặp).")
     return pd.DataFrame(articles)
 
 
@@ -319,7 +332,7 @@ def generate_meaningful_topic_name(keywords, sample_titles):
     """Sử dụng Gemini để tạo tên chủ đề."""
     try:
         model = genai.GenerativeModel('gemini-1.5-flash-latest')
-        prompt = f"""Bạn là một trợ lý biên tập báo chí. Dựa vào các thông tin dưới đây, hãy tạo ra chỉ một tên chủ đề ngắn gọn duy nhất (không quá 6 từ) bằng tiếng Việt để tóm tắt nội dung chính.
+        prompt = f"""Bạn là một trợ lý biên tập báo chí. Dựa vào các thông tin dưới đây, hãy tạo ra một tên chủ đề ngắn gọn (không quá 6 từ) bằng tiếng Việt để tóm tắt nội dung chính.
         Các từ khóa chính của chủ đề: {keywords}
         Một vài tiêu đề bài viết ví dụ:
         - {"\n- ".join(sample_titles)}
@@ -360,53 +373,19 @@ def main_pipeline():
     print("\n🚀 BẮT ĐẦU QUY TRÌNH TỰ ĐỘNG HÓA")
     
     # Các bước giữ nguyên
-    df = fetch_recent_articles(RSS_URLS,hours=24)
+    df = fetch_recent_articles_optimized(RSS_URLS,hours=24)
     if df.empty:
         print("Không có bài viết mới nào. Dừng quy trình.")
         return
     df = clean_text(df)
     embeddings = vectorize_text(df['summary_not_stop_word'].tolist(), SBERT_MODEL)
     
-    print("\n3. Đang tìm số cụm (K) tối ưu bằng hệ số Silhouette...")
-    from sklearn.metrics import silhouette_score
-    import numpy as np
-
-    silhouette_scores = []
-    # Đặt một giới hạn hợp lý, ví dụ không quá 20 chủ đề
-    possible_k_values = range(2, 20) 
-
-    for k in possible_k_values:
-        kmeans_temp = KMeans(n_clusters=k, random_state=42, n_init=10)
-        labels = kmeans_temp.fit_predict(embeddings)
-        score = silhouette_score(embeddings, labels)
-        silhouette_scores.append(score)
-
-    # Tự động tìm K có silhouette score cao nhất
-    best_k_index = np.argmax(silhouette_scores)
-    NUM_CLUSTERS = possible_k_values[best_k_index]
-
-    print(f"-> Đã tìm thấy số cụm tối ưu là K={NUM_CLUSTERS}")
-    # -----------------------------------------------------------------------------
-
-
-    # BƯỚC 4: Chạy K-Means cuối cùng với số cụm đã tìm được
-    # -----------------------------------------------------------------------------
-    print(f"\n4. Đang thực hiện phân cụm K-Means với {NUM_CLUSTERS} cụm...")
-    # Khởi tạo mô hình K-Means với NUM_CLUSTERS đã được tự động xác định
+    print("Đang thực hiện phân cụm...")
     kmeans = KMeans(n_clusters=NUM_CLUSTERS, random_state=42, n_init=10)
-
-    # Huấn luyện mô hình và dự đoán cụm
     df['topic_cluster'] = kmeans.fit_predict(embeddings)
-    print("-> Phân cụm hoàn tất.")
-
-
-
-    print("\n📊 Phân bổ số lượng bài viết vào các cụm (chủ đề):")
-    cluster_counts = df['topic_cluster'].value_counts().sort_index()
-    print(cluster_counts)
-        
+    
     topic_labels = get_topic_labels(df)
-        
+    
     print("5/6: Đang tính toán ma trận tương đồng...")
     cosine_sim = cosine_similarity(embeddings)
     
@@ -415,9 +394,7 @@ def main_pipeline():
     np.save('cosine_similarity_matrix.npy', cosine_sim)
     with open('topic_labels.json', 'w', encoding='utf-8') as f:
         json.dump(topic_labels, f, ensure_ascii=False, indent=4)
-    # Lưu embeddings.npy cho app
-    np.save('embeddings.npy', embeddings)
-    print("✅ Đã lưu embeddings.npy.")
+    
     print("\n✅ QUY TRÌNH HOÀN TẤT! ✅")
 
 if __name__ == "__main__":

@@ -7,8 +7,10 @@ import sys
 import subprocess
 from urllib.parse import urlparse, quote, unquote
 from sklearn.metrics.pairwise import cosine_similarity
-
+from sentence_transformers import SentenceTransformer
+# from streamlit_extras.app_logo import app_logo
 # --- CẤU HÌNH TRANG VÀ CSS ---
+
 st.set_page_config(page_title="Tạp chí của bạn", page_icon="📖", layout="wide")
 
 # Initialize session state
@@ -25,6 +27,10 @@ if 'selected_topic' not in st.session_state:
 if 'selected_sources' not in st.session_state:
     st.session_state.selected_sources = []
 
+@st.cache_resource
+def get_sbert_model():
+    return SentenceTransformer('Cloyne/vietnamese-sbert-v3')
+
 def local_css(file_name):
     try:
         with open(file_name, "r", encoding="utf-8") as f:
@@ -34,18 +40,20 @@ def local_css(file_name):
 
 # --- HÀM TẢI DỮ LIỆU ---
 @st.cache_data
-def load_data():
+def load_data_and_embeddings():
+    df = pd.read_csv('final_articles_for_app.csv')
+    cosine_sim = np.load('cosine_similarity_matrix.npy')
+    with open('topic_labels.json', 'r', encoding='utf-8') as f:
+        topic_labels = json.load(f)
+    df['published_time'] = pd.to_datetime(df['published_time'])
+    df['source_name'] = df['link'].apply(get_source_name)
+    # Luôn yêu cầu embeddings.npy phải tồn tại
     try:
-        df = pd.read_csv('final_articles_for_app.csv')
-        cosine_sim = np.load('cosine_similarity_matrix.npy')
-        with open('topic_labels.json', 'r', encoding='utf-8') as f:
-            topic_labels = json.load(f)
-        df['published_time'] = pd.to_datetime(df['published_time'])
-        # Tạo cột 'source_name' để lọc dễ dàng hơn
-        df['source_name'] = df['link'].apply(get_source_name)
-        return df, cosine_sim, topic_labels
-    except FileNotFoundError:
-        return None, None, None
+        embeddings = np.load('embeddings.npy')
+    except:
+        st.error("Không tìm thấy file embeddings.npy. Vui lòng chạy lại pipeline để tạo embeddings.")
+        st.stop()
+    return df, cosine_sim, topic_labels, embeddings
 
 def get_source_name(link):
     try:
@@ -76,6 +84,8 @@ def render_main_grid(df, selected_topic_name):
                 
                 # Sử dụng cột 'source_name' đã tạo
                 source_name = row['source_name']
+
+
                 card_html = f"""<div class="article-card">
                                 {image_html}
                                 <div class="article-content">
@@ -88,6 +98,8 @@ def render_main_grid(df, selected_topic_name):
                     st.session_state.current_article_id = index
                     st.session_state.current_view = "detail"
                     st.rerun()
+
+                
 
 def calculate_interest_vector(df, cosine_sim, article_ids):
     """Calculate interest vector from reading history."""
@@ -234,7 +246,7 @@ def render_detail_view(article_id, df, cosine_sim, topic_labels):
                         if st.button(rec_article['title'], key=f"rec_{article_index}"):
                             st.session_state.current_article_id = article_index
                             st.rerun()
-                        st.caption(f"Độ tương đồng: {score:.2f}")
+                        st.caption(f"Nguồn: {rec_article['source_name']} | Độ tương đồng: {score:.2f}")
         else: # Cùng chủ đề
             cluster_id = article['topic_cluster']
             topic_name = topic_labels.get(str(cluster_id), "N/A")
@@ -252,7 +264,23 @@ def render_detail_view(article_id, df, cosine_sim, topic_labels):
                         if st.button(row['title'], key=f"rec_{i}"):
                             st.session_state.current_article_id = i
                             st.rerun()
-                        st.caption(f"Nguồn: {row['source_name']}")
+                        # Tính độ tương đồng cho bài viết cùng chủ đề
+                        similarity_score = cosine_sim[article_id][i]
+                        st.caption(f"Nguồn: {row['source_name']} | Độ tương đồng: {similarity_score:.2f}")
+
+def render_search_results(query, df, embeddings, sbert_model):
+    """Vector hóa truy vấn và hiển thị kết quả tìm kiếm."""
+    st.header(f"Kết quả tìm kiếm cho: \"{query}\"")
+    # Vector hóa câu truy vấn
+    with st.spinner("Đang phân tích và tìm kiếm..."):
+        query_vector = sbert_model.encode([query])
+        # Tính toán độ tương đồng
+        similarities = cosine_similarity(query_vector, embeddings)[0]
+        # Sắp xếp và lấy kết quả
+        sim_scores = sorted(list(enumerate(similarities)), key=lambda x: x[1], reverse=True)
+        result_indices = [i[0] for i in sim_scores]
+        result_df = df.iloc[result_indices].copy()
+    render_main_grid(result_df, f"Kết quả cho: \"{query}\"")
 
 # --- LUỒNG CHÍNH CỦA ỨNG DỤNG ---
 local_css("style.css")
@@ -273,78 +301,110 @@ if 'interest_vector' not in st.session_state:
 if 'interest_articles' not in st.session_state:
     st.session_state.interest_articles = None
 
-df, cosine_sim, topic_labels = load_data()
+df, cosine_sim, topic_labels, embeddings = load_data_and_embeddings()
+sbert_model = get_sbert_model()
 
-# --- GIAO DIỆN THANH BÊN ---
-st.sidebar.title("Tạp chí của bạn")
-st.sidebar.markdown("---")
+# --- Ô TÌM KIẾM SEMANTIC Ở HEADER ---
+search_col1, search_col2 = st.columns([0.85, 0.15])
+with search_col1:
+    search_input = st.text_input(
+        "Tìm kiếm bài viết (theo ngữ nghĩa, nhập từ khóa hoặc câu hỏi):",
+        value=st.session_state.get('search_query', ''),
+        key="search_input",
+        placeholder="Nhập nội dung bạn muốn tìm...",
+        label_visibility="collapsed"
+    )
+with search_col2:
+    search_button = st.button("🔍 Tìm kiếm", use_container_width=True)
 
-# Nút cập nhật
-if st.sidebar.button("🔄 Cập nhật tin tức mới", use_container_width=True):
-    with st.spinner("⏳ Đang chạy pipeline... Việc này có thể mất vài phút."):
-        try:
-            process = subprocess.run(
-                [sys.executable, 'pipeline.py'], capture_output=True, text=True,
-                encoding='utf-8', errors='ignore'
-            )
-            st.session_state.update_log = process.stdout
-            st.session_state.update_error = process.stderr
-            st.session_state.update_success = True
-            st.cache_data.clear() # Xóa cache để chuẩn bị tải lại
-        except Exception as e:
-            st.session_state.update_error = f"Lỗi nghiêm trọng khi chạy pipeline: {e}"
-            st.session_state.update_success = False
+if search_input and (search_button or search_input != st.session_state.get('search_query', '')):
+    st.session_state['search_query'] = search_input
+    st.session_state['current_view'] = "search"
+    st.rerun()
 
-# Hiển thị kết quả cập nhật và nút tải lại
-if st.session_state.update_success:
-    st.sidebar.success("✅ Cập nhật hoàn tất!")
-    with st.sidebar.expander("Xem chi tiết quá trình"):
-        st.code(st.session_state.update_log)
-        if st.session_state.update_error:
-            st.error("Lỗi từ pipeline:")
-            st.code(st.session_state.update_error)
-    if st.sidebar.button("Xem tin tức mới", use_container_width=True):
-        st.session_state.update_success = False # Reset cờ
+if st.session_state.get('current_view', 'main') == "search" and st.session_state.get('search_query', ''):
+    with st.spinner("Đang phân tích và tìm kiếm..."):
+        query_vector = sbert_model.encode([st.session_state['search_query']])
+        similarities = cosine_similarity(query_vector, embeddings)[0]
+        sim_scores = sorted(list(enumerate(similarities)), key=lambda x: x[1], reverse=True)
+        result_indices = [i[0] for i in sim_scores]
+        result_df = df.iloc[result_indices].copy()
+    st.sidebar.info("Bạn đang ở trang kết quả tìm kiếm. Chọn danh mục khác hoặc bấm 'Quay lại' để trở về.")
+    if st.sidebar.button("⬅️ Quay lại trang chủ", use_container_width=True):
+        st.session_state['search_query'] = ''
+        st.session_state['current_view'] = "main"
         st.rerun()
-
-st.sidebar.markdown("---")
-
-if df is None:
-    st.error("Lỗi: Không tìm thấy file dữ liệu. Vui lòng bấm nút 'Cập nhật tin tức mới' ở thanh bên.")
+    render_main_grid(result_df, f"Kết quả cho: \"{st.session_state['search_query']}\"")
+    st.stop()
+elif st.session_state.current_view == "detail" and st.session_state.current_article_id is not None:
+    render_detail_view(st.session_state.current_article_id, df, cosine_sim, topic_labels)
 else:
-    # --- PHẦN LỌC THEO CHỦ ĐỀ ---
-    st.sidebar.subheader("Khám phá các chủ đề")
-    topic_display_list = ["Dành cho bạn (Tất cả)", "Bài viết đã đọc", "Dựa trên lịch sử đọc"] + [v for k, v in topic_labels.items()]
-    
-    st.sidebar.markdown('<div class="sidebar-nav">', unsafe_allow_html=True)
-    for topic in topic_display_list:
-        is_active = (topic == st.session_state.selected_topic)
-        active_class = "active" if is_active else ""
-        icon = "📖" if topic != "Bài viết đã đọc" and topic != "Dựa trên lịch sử đọc" else "👁️" if topic == "Bài viết đã đọc" else "🎯"
-        if st.sidebar.button(f"{icon} {topic}", key=f"topic_{topic}", use_container_width=True):
-            st.session_state.selected_topic = topic
-            st.rerun()
-    st.sidebar.markdown('</div>', unsafe_allow_html=True)
+    # --- GIAO DIỆN THANH BÊN ---
+    st.sidebar.title("Tạp chí của bạn")
     st.sidebar.markdown("---")
 
-    # --- BỔ SUNG: PHẦN LỌC THEO NGUỒN ---
-    st.sidebar.subheader("Lọc theo nguồn")
-    all_sources = sorted(df['source_name'].unique().tolist())
-    selected_sources = st.sidebar.multiselect(
-        "Chọn một hoặc nhiều nguồn:",
-        options=all_sources,
-        default=st.session_state.selected_sources
-    )
-    
-    if selected_sources != st.session_state.selected_sources:
-        st.session_state.selected_sources = selected_sources
-        st.rerun()
+    # Nút cập nhật
+    if st.sidebar.button("🔄 Cập nhật tin tức mới", use_container_width=True):
+        with st.spinner("⏳ Đang chạy pipeline... Việc này có thể mất vài phút."):
+            try:
+                process = subprocess.run(
+                    [sys.executable, 'pipeline.py'], capture_output=True, text=True,
+                    encoding='utf-8', errors='ignore'
+                )
+                st.session_state.update_log = process.stdout
+                st.session_state.update_error = process.stderr
+                st.session_state.update_success = True
+                st.cache_data.clear() # Xóa cache để chuẩn bị tải lại
+            except Exception as e:
+                st.session_state.update_error = f"Lỗi nghiêm trọng khi chạy pipeline: {e}"
+                st.session_state.update_success = False
 
-    # --- HIỂN THỊ VIEW TƯƠNG ỨNG ---
-    if st.session_state.current_view == "detail" and st.session_state.current_article_id is not None:
-        render_detail_view(st.session_state.current_article_id, df, cosine_sim, topic_labels)
+    # Hiển thị kết quả cập nhật và nút tải lại
+    if st.session_state.update_success:
+        st.sidebar.success("✅ Cập nhật hoàn tất!")
+        with st.sidebar.expander("Xem chi tiết quá trình"):
+            st.code(st.session_state.update_log)
+            if st.session_state.update_error:
+                st.error("Lỗi từ pipeline:")
+                st.code(st.session_state.update_error)
+        if st.sidebar.button("Xem tin tức mới", use_container_width=True):
+            st.session_state.update_success = False # Reset cờ
+            st.rerun()
+
+    st.sidebar.markdown("---")
+
+    if df is None:
+        st.error("Lỗi: Không tìm thấy file dữ liệu. Vui lòng bấm nút 'Cập nhật tin tức mới' ở thanh bên.")
     else:
-        # Lọc theo chủ đề
+        # --- PHẦN LỌC THEO CHỦ ĐỀ ---
+        st.sidebar.subheader("Khám phá các chủ đề")
+        topic_display_list = ["Dành cho bạn (Tất cả)", "Bài viết đã đọc", "Dựa trên lịch sử đọc"] + [v for k, v in topic_labels.items()]
+        
+        st.sidebar.markdown('<div class="sidebar-nav">', unsafe_allow_html=True)
+        for topic in topic_display_list:
+            is_active = (topic == st.session_state.selected_topic)
+            active_class = "active" if is_active else ""
+            icon = "📖" if topic != "Bài viết đã đọc" and topic != "Dựa trên lịch sử đọc" else "👁️" if topic == "Bài viết đã đọc" else "🎯"
+            if st.sidebar.button(f"{icon} {topic}", key=f"topic_{topic}", use_container_width=True):
+                st.session_state.selected_topic = topic
+                st.rerun()
+        st.sidebar.markdown('</div>', unsafe_allow_html=True)
+        st.sidebar.markdown("---")
+
+        # --- BỔ SUNG: PHẦN LỌC THEO NGUỒN ---
+        st.sidebar.subheader("Lọc theo nguồn")
+        all_sources = sorted(df['source_name'].unique().tolist())
+        selected_sources = st.sidebar.multiselect(
+            "Chọn một hoặc nhiều nguồn:",
+            options=all_sources,
+            default=st.session_state.selected_sources
+        )
+        
+        if selected_sources != st.session_state.selected_sources:
+            st.session_state.selected_sources = selected_sources
+            st.rerun()
+
+        # --- HIỂN THỊ VIEW TƯƠNG ỨNG ---
         if st.session_state.selected_topic == "Bài viết đã đọc":
             if st.session_state.read_articles:
                 # Lấy danh sách bài viết đã đọc theo thứ tự trong reading_history (mới nhất lên đầu)
