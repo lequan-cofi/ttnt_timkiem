@@ -10,3 +10,8 @@ google-cloud-storage
 python-dotenv
 streamlit_extras
 streamlit
+pyvi
+stopwordsiso
+transformers
+torch
+tqdm
