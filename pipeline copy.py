@@ -364,7 +364,7 @@ def get_topic_labels(df, num_keywords=5):
         meaningful_name = generate_meaningful_topic_name(keywords, sample_titles)
         print(f"  - Cluster {i}: {keywords}  =>  Tên chủ đề: {meaningful_name}")
         topic_labels[str(i)] = meaningful_name
-        time.sleep(1)
+        time.sleep(4.1)
     print("-> Gán nhãn chủ đề hoàn tất.")
     return topic_labels
 

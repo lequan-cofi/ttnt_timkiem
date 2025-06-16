@@ -49,23 +49,24 @@ a:hover {
 /* --- Giao diện thẻ bài viết (giữ nguyên) --- */
 .article-card {
     border-radius: 8px;
-    box-shadow: 0 4px 8px 0 rgba(0,0,0,0.1);
+    box-shadow: 0 4px 8px 0 rgba(126, 126, 126, 0.541);
     transition: all 0.3s ease-in-out;
     margin-bottom: 25px;
-    background-color: #444653;
+    background-color: var(--background-color);
     overflow: hidden;
     height: 400px;
     display: flex;
     flex-direction: column;
     text-decoration: none;
-    border: 1px solid #000000;
-    color: #e0e0e0;
+    border: 1px solid var(--border-color);
+    color: var(--text-color);
 }
 
 .article-card:hover {
     box-shadow: 0 8px 16px 0 rgba(0,0,0,0.2);
     transform: translateY(-5px);
     text-decoration: none;
+    background-color: var(--hover-color);
 }
 
 .card-image-container {
@@ -96,7 +97,7 @@ a:hover {
 .article-title {
     font-size: 1.1rem;
     font-weight: 600;
-    color: #ffffff; /* Thay đổi màu cho phù hợp nền trắng */
+    color: var(--text-color);
     margin-bottom: 10px;
     display: -webkit-box;
     -webkit-line-clamp: 3;
@@ -109,7 +110,7 @@ a:hover {
 .article-source {
     font-size: 0.8rem;
     font-weight: bold;
-    color: #b8b7b7; /* Màu xám cho nguồn tin */
+    color: var(--secondary-text-color);
     text-transform: uppercase;
 }
 

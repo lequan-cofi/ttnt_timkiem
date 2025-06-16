@@ -164,7 +164,7 @@ RSS_URLS = [
 ]
 
 # Cấu hình cho các mô hìnhgit 
-NUM_CLUSTERS = 12
+NUM_CLUSTERS = None  # Sẽ được cập nhật sau khi tìm K tối ưu
 SBERT_MODEL = 'Cloyne/vietnamese-sbert-v3'
 
 # --- KIỂM TRA VÀ CẤU HÌNH API KEY (PHẦN GỠ LỖI) ----------------------------
@@ -335,7 +335,9 @@ def get_topic_labels(df, num_keywords=5):
     """Gán nhãn chủ đề cho các cụm."""
     print("4/6: Đang gán nhãn chủ đề cho các cụm...")
     topic_labels = {}
-    for i in range(NUM_CLUSTERS):
+    # Sử dụng số cụm thực tế từ dữ liệu
+    actual_clusters = df['topic_cluster'].nunique()
+    for i in range(actual_clusters):
         cluster_df = df[df['topic_cluster'] == i]
         cluster_texts = cluster_df['summary_cleaned'].tolist()
         if len(cluster_texts) < 3:
