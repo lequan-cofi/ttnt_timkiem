@@ -5,6 +5,8 @@ import json
 import re
 import sys
 import subprocess
+import requests
+from bs4 import BeautifulSoup
 from urllib.parse import urlparse, quote, unquote
 from sklearn.metrics.pairwise import cosine_similarity
 from sentence_transformers import SentenceTransformer
@@ -206,6 +208,72 @@ def render_detail_view(article_id, df, cosine_sim, topic_labels):
     if article_id not in st.session_state.reading_history:
         st.session_state.reading_history.insert(0, article_id)  # Add to history without limit
     
+    st.markdown("""
+        <style>
+            [data-testid="stSidebar"][aria-expanded="true"]{
+                display: none;
+            }
+          
+            /* Cỡ chữ cho các class detail */
+            .article-content, .fck_detail, .detail-content, .dt-news__content {
+                font-size: 15px !important;
+                line-height: 1.6 !important;
+                margin: 0 !important;
+                padding: 0 !important;
+            }
+            .article-content img,
+            .fck_detail img,
+            .detail-content img,
+            .dt-news__content img {
+                max-width: 100% !important;
+                height: auto !important;
+                display: block !important;
+                margin: 10px auto !important;
+                border-radius: 8px !important;
+                box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08) !important;
+            }
+            
+            /* Style cho các link trong bài viết */
+            .article-content a,
+            .fck_detail a,
+            .detail-content a,
+            .dt-news__content a {
+                color: #0066cc !important;
+                text-decoration: none !important;
+                border-bottom: 1px solid transparent !important;
+                transition: border-color 0.2s ease !important;
+            }
+            .article-content a:hover,
+            .fck_detail a:hover,
+            .detail-content a:hover,
+            .dt-news__content a:hover {
+                border-bottom-color: #0066cc !important;
+            }
+            
+            /* Style cho các blockquote */
+            .article-content blockquote,
+            .fck_detail blockquote,
+            .detail-content blockquote,
+            .dt-news__content blockquote {
+                border-left: 4px solid #0066cc !important;
+                margin: 1em 0 !important;
+                padding: 0.5em 1em !important;
+                background: #f8f9fa !important;
+                font-style: italic !important;
+            }
+            
+            /* Style cho các đoạn văn */
+            .article-content p,
+            .fck_detail p,
+            .detail-content p,
+            .dt-news__content p {
+                margin: 1em 0 !important;
+            }
+            
+        </style>
+    """, unsafe_allow_html=True)
+
+
     if st.button("⬅️ Quay lại danh sách"):
         st.session_state.current_view = "main"
         st.session_state.current_article_id = None
@@ -215,17 +283,27 @@ def render_detail_view(article_id, df, cosine_sim, topic_labels):
     vn_time = article['published_time'].tz_convert('Asia/Ho_Chi_Minh')
     st.caption(f"Nguồn: {article['source_name']} | Xuất bản: {vn_time.strftime('%d-%m-%Y %H:%M')}")
     st.markdown("---")
+    
     col1, col2 = st.columns([0.6, 0.4])
     with col1:
         if pd.notna(article['image_url']):
             st.markdown(f'<img src="{article["image_url"]}" onerror="this.onerror=null; this.src=\'no-image-png-2.webp\';" style="width:100%;">', unsafe_allow_html=True)
         else:
             st.markdown('<img src="no-image-png-2.webp" style="width:100%;">', unsafe_allow_html=True)
-        st.subheader("Tóm tắt")
-        summary_raw = article.get('summary_raw', '')
-        summary_without_img = re.sub(r'<img[^>]*>', '', summary_raw, flags=re.IGNORECASE)
-        st.markdown(summary_without_img, unsafe_allow_html=True)
+        
+        # Hiển thị nội dung đầy đủ của bài viết
+        with st.spinner("Đang tải nội dung bài viết..."):
+            article_content = crawl_article_content(article['link'])
+            if article_content:
+                st.markdown(article_content, unsafe_allow_html=True)
+            else:
+                st.warning("Không thể tải nội dung đầy đủ của bài viết. Hiển thị tóm tắt thay thế.")
+                summary_raw = article.get('summary_raw', '')
+                summary_without_img = re.sub(r'<img[^>]*>', '', summary_raw, flags=re.IGNORECASE)
+                st.markdown(summary_without_img, unsafe_allow_html=True)
+        
         st.link_button("Đọc toàn bộ bài viết trên trang gốc", article['link'])
+    
     with col2:
         st.subheader("Khám phá thêm")
         rec_type = st.radio("Hiển thị các bài viết:", ("Có nội dung tương tự", "Trong cùng chủ đề"), key=f"rec_type_{article_id}")
@@ -267,6 +345,105 @@ def render_detail_view(article_id, df, cosine_sim, topic_labels):
                         # Tính độ tương đồng cho bài viết cùng chủ đề
                         similarity_score = cosine_sim[article_id][i]
                         st.caption(f"Nguồn: {row['source_name']} | Độ tương đồng: {similarity_score:.2f}")
+def crawl_article_content(url):
+    """Crawl nội dung bài viết từ URL và làm sạch các thẻ <a>."""
+    try:
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+        response = requests.get(url, headers=headers, timeout=10)
+        response.encoding = 'utf-8'
+        soup = BeautifulSoup(response.text, 'html.parser')
+
+        # Xử lý lazy load ảnh: chuyển data-src thành src
+        for img in soup.find_all('img'):
+            if img.has_attr('data-src'):
+                img['src'] = img['data-src']
+            if not img.has_attr('src') or not img['src'].strip():
+                img.decompose()
+            # Thêm thuộc tính loading="lazy" cho tất cả ảnh
+            img['loading'] = 'lazy'
+
+        # Xóa các figure rỗng
+        for fig in soup.find_all('figure'):
+            if not fig.text.strip() and not fig.find('img'):
+                fig.decompose()
+
+        article = None
+        # VnExpress
+        if 'vnexpress.net' in url:
+            article = soup.find('article', class_='fck_detail')
+            if not article: article = soup.find('article')
+
+        # Tuổi Trẻ, Thanh Niên
+        elif 'tuoitre.vn' in url or 'thanhnien.vn' in url:
+            article = soup.find('div', class_='detail-content')
+            if not article:
+                divs = soup.find_all('div')
+                article = max(divs, key=lambda d: len(d.text)) if divs else None
+
+        # Dân trí
+        elif 'dantri.com.vn' in url:
+            article = soup.find('div', class_='dt-news__content')
+            if not article: article = soup.find('article')
+            if not article:
+                divs = soup.find_all('div')
+                article = max(divs, key=lambda d: len(d.text)) if divs else None
+        
+        # Nếu tìm thấy vùng chứa nội dung bài viết
+        if article:
+            # Xóa các thẻ không cần thiết
+            for tag in article.find_all(['script', 'style', 'iframe', 'button', 'ins', 'noscript']):
+                tag.decompose()
+            
+            # Xóa các thuộc tính không cần thiết
+            for tag in article.find_all(True):
+                # Giữ lại các thuộc tính cần thiết
+                allowed_attrs = ['src', 'alt', 'href', 'target', 'rel', 'loading']
+                attrs = dict(tag.attrs)
+                for attr in attrs:
+                    if attr not in allowed_attrs:
+                        del tag[attr]
+            
+            # Xử lý các thẻ <a>
+            for a in article.find_all('a'):
+                # Buộc tất cả link mở trong tab mới
+                a['target'] = '_blank'
+                # Thêm rel để bảo mật
+                a['rel'] = 'noopener noreferrer'
+                # Xóa các thuộc tính javascript
+                if a.has_attr('onclick'):
+                    del a['onclick']
+                # Xóa các thuộc tính khác không cần thiết
+                for attr in ['data-', 'on', 'class', 'id']:
+                    for a_attr in list(a.attrs):
+                        if a_attr.startswith(attr):
+                            del a[a_attr]
+            
+            # Xử lý các thẻ <img>
+            for img in article.find_all('img'):
+                # Thêm thuộc tính loading="lazy"
+                img['loading'] = 'lazy'
+                # Xóa các thuộc tính không cần thiết
+                for attr in ['data-', 'on', 'class', 'id']:
+                    for img_attr in list(img.attrs):
+                        if img_attr.startswith(attr):
+                            del img[img_attr]
+            
+            # Xóa các thẻ div rỗng
+            for div in article.find_all('div'):
+                if not div.text.strip() and not div.find('img'):
+                    div.decompose()
+            
+            return str(article)
+
+        # Trả về None nếu không tìm thấy nội dung
+        return None
+
+    except Exception as e:
+        # In ra lỗi để dễ debug hơn
+        # st.error(f"Lỗi khi crawl bài viết từ {url}: {str(e)}")
+        return None
 
 def render_search_results(query, df, embeddings, sbert_model):
     """Vector hóa truy vấn và hiển thị kết quả tìm kiếm."""
@@ -447,3 +624,4 @@ else:
             if st.session_state.selected_topic != "Bài viết đã đọc":
                 display_df = display_df.sort_values(by='published_time', ascending=False)
         render_main_grid(display_df, st.session_state.selected_topic)
+

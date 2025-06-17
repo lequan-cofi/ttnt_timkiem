@@ -104,7 +104,7 @@ a:hover {
     -webkit-box-orient: vertical;
     overflow: hidden;
     text-overflow: ellipsis;
-    height: 70px;
+    height: 80px;
 }
 
 .article-source {
