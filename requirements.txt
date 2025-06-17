@@ -15,5 +15,5 @@ stopwordsiso
 transformers
 torch
 tqdm
-BeautifulSoup
+BeautifulSoup4
 requests
