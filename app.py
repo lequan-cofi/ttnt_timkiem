@@ -55,8 +55,15 @@ def load_data_and_embeddings():
     # Đọc nhãn chủ đề
     with open('topic_labels.json', 'r', encoding='utf-8') as f:
         topic_labels = json.load(f)
-    # Chuyển đổi thời gian
-    df['published_time'] = pd.to_datetime(df['published_time'])
+    # Chuyển đổi thời gian với xử lý lỗi
+    try:
+        df['published_time'] = pd.to_datetime(df['published_time'], errors='coerce')
+        # Loại bỏ các bài viết có thời gian không hợp lệ
+        df = df.dropna(subset=['published_time'])
+    except Exception as e:
+        st.error(f"Lỗi khi chuyển đổi thời gian: {e}")
+        # Nếu lỗi, giữ nguyên dạng string
+        pass
     # Sử dụng cột source trực tiếp từ CSV
     df['source_name'] = df['source']
     # Đọc embeddings
@@ -337,7 +344,10 @@ def render_detail_view(article_id, df, cosine_sim, topic_labels):
     
     # Hiển thị tiêu đề và thông tin bài viết
     st.title(article['title'])
-    vn_time = article['published_time'].tz_convert('Asia/Ho_Chi_Minh')
+    
+    # Giữ nguyên thời gian từ RSS (đã đúng múi giờ Việt Nam)
+    vn_time = article['published_time']
+    
     st.caption(f"Nguồn: {article['source_name']} | Xuất bản: {vn_time.strftime('%d-%m-%Y %H:%M')}")
     st.markdown("---")
     
@@ -537,38 +547,35 @@ else:
     st.sidebar.title("Tạp chí của bạn")
     st.sidebar.markdown("---")
 
-    # Nút cập nhật
-    if st.sidebar.button("🔄 Cập nhật tin tức mới", use_container_width=True):
-        with st.spinner("⏳ Đang chạy pipeline... Việc này có thể mất vài phút."):
+    # Nút cập nhật dữ liệu
+    if st.sidebar.button("🔄 Cập nhật dữ liệu", use_container_width=True):
+        with st.spinner("⏳ Đang tải lại dữ liệu..."):
             try:
-                process = subprocess.run(
-                    [sys.executable, 'pipeline.py'], capture_output=True, text=True,
-                    encoding='utf-8', errors='ignore'
-                )
-                st.session_state.update_log = process.stdout
-                st.session_state.update_error = process.stderr
+                # Xóa cache để buộc tải lại dữ liệu từ CSV
+                st.cache_data.clear()
+                st.session_state.update_log = "Đã xóa cache và tải lại dữ liệu từ final_articles_for_app.csv"
+                st.session_state.update_error = ""
                 st.session_state.update_success = True
-                st.cache_data.clear() # Xóa cache để chuẩn bị tải lại
             except Exception as e:
-                st.session_state.update_error = f"Lỗi nghiêm trọng khi chạy pipeline: {e}"
+                st.session_state.update_error = f"Lỗi khi tải lại dữ liệu: {e}"
                 st.session_state.update_success = False
 
     # Hiển thị kết quả cập nhật và nút tải lại
     if st.session_state.update_success:
-        st.sidebar.success("✅ Cập nhật hoàn tất!")
-        with st.sidebar.expander("Xem chi tiết quá trình"):
-            st.code(st.session_state.update_log)
+        st.sidebar.success("✅ Đã tải lại dữ liệu!")
+        with st.sidebar.expander("Xem chi tiết"):
+            st.info(st.session_state.update_log)
             if st.session_state.update_error:
-                st.error("Lỗi từ pipeline:")
+                st.error("Lỗi:")
                 st.code(st.session_state.update_error)
-        if st.sidebar.button("Xem tin tức mới", use_container_width=True):
+        if st.sidebar.button("Xem dữ liệu mới", use_container_width=True):
             st.session_state.update_success = False # Reset cờ
             st.rerun()
 
     st.sidebar.markdown("---")
 
     if df is None:
-        st.error("Lỗi: Không tìm thấy file dữ liệu. Vui lòng bấm nút 'Cập nhật tin tức mới' ở thanh bên.")
+        st.error("Lỗi: Không tìm thấy file dữ liệu. Vui lòng bấm nút 'Cập nhật dữ liệu' ở thanh bên.")
     else:
         # --- PHẦN LỌC THEO CHỦ ĐỀ ---
         st.sidebar.subheader("Khám phá các chủ đề")
@@ -639,6 +646,7 @@ else:
         if not display_df.empty:
             # Chỉ sắp xếp theo thời gian đăng nếu không phải là bài viết đã đọc
             if st.session_state.selected_topic != "Bài viết đã đọc":
-                display_df = display_df.sort_values(by='published_time', ascending=False)
+                # Sắp xếp đơn giản như Excel - so sánh trực tiếp datetime
+                display_df = display_df.sort_values(by='published_time', ascending=False, kind='mergesort')
         render_main_grid(display_df, st.session_state.selected_topic)
 

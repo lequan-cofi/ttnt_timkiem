@@ -137,10 +137,7 @@ RSS_URLS = [
     "https://thanhnien.vn/rss/blog-phong-vien.rss",
     "https://thanhnien.vn/rss/toi-viet.rss",
     "https://thanhnien.vn/rss/viec-lam.rss",
-    "https://thanhnien.vn/rss/tno.rss",
-    "https://thanhnien.vn/rss/tin-24h.rss",
-    "https://thanhnien.vn/rss/thi-truong.rss",
-    "https://thanhnien.vn/rss/tin-nhanh-360.tno",
+    
      # Cột bên trái
     "https://tuoitre.vn/rss/tin-moi-nhat.rss",  # Trang chủ
     "https://tuoitre.vn/rss/the-gioi.rss",
@@ -228,43 +225,86 @@ def fetch_recent_articles(rss_urls, hours=24):
     time_threshold = datetime.now(timezone.utc) - timedelta(hours=hours)
     
     # Lặp qua từng URL trong danh sách
+    failed_rss = []  # Danh sách RSS lỗi
+    successful_rss = []  # Danh sách RSS thành công
+    
     for url in rss_urls:
-        feed = feedparser.parse(url)
-        for entry in feed.entries:
-            norm_title = normalize_title(entry.title)
-            link = entry.link.strip()
-            # Kiểm tra trùng lặp cả tiêu đề và link
-            if norm_title in seen_titles or link in seen_links:
+        try:
+            print(f"  - Đang xử lý: {url}")
+            feed = feedparser.parse(url)
+            
+            # Kiểm tra feed có hợp lệ không
+            if not hasattr(feed, 'entries') or len(feed.entries) == 0:
+                failed_rss.append(f"{url} - Không có bài viết hoặc RSS không hợp lệ")
+                print(f"    ❌ Lỗi: Không có bài viết")
                 continue
-            published_time = entry.get("published", "")
-            summary_raw = entry.get("summary", "")
-            image_url = None
-            # Trích xuất URL hình ảnh từ trong thẻ <img> của tóm tắt
-            if summary_raw:
-                soup = BeautifulSoup(summary_raw, 'html.parser')
-                img_tag = soup.find('img')
-                if img_tag and 'src' in img_tag.attrs:
-                    image_url = img_tag['src']
-            # Lấy tên nguồn từ link bài viết
-            source_name = get_source_name(entry.link)
-            # Xử lý và kiểm tra thời gian đăng bài
-            if published_time:
-                try:
-                    parsed_time = parse_date(published_time).astimezone(timezone.utc)
-                    if parsed_time >= time_threshold:
-                        articles.append({
-                            "title": entry.title,
-                            "link": entry.link,
-                            "summary_raw": summary_raw,
-                            "published_time": parsed_time.isoformat(),
-                            "image_url": image_url,
-                            "source": source_name
-                        })
-                        seen_titles.add(norm_title)
-                        seen_links.add(link)
-                except (ValueError, TypeError):
+                
+            entry_count = 0
+            for entry in feed.entries:
+                norm_title = normalize_title(entry.title)
+                link = entry.link.strip()
+                # Kiểm tra trùng lặp cả tiêu đề và link
+                if norm_title in seen_titles or link in seen_links:
                     continue
-    print(f"-> Đã tìm thấy {len(articles)} bài viết mới (sau khi lọc trùng lặp).")
+                published_time = entry.get("published", "")
+                summary_raw = entry.get("summary", "")
+                image_url = None
+                # Trích xuất URL hình ảnh từ trong thẻ <img> của tóm tắt
+                if summary_raw:
+                    soup = BeautifulSoup(summary_raw, 'html.parser')
+                    img_tag = soup.find('img')
+                    if img_tag and 'src' in img_tag.attrs:
+                        image_url = img_tag['src']
+                # Lấy tên nguồn từ link bài viết
+                source_name = get_source_name(entry.link)
+                # Xử lý và kiểm tra thời gian đăng bài
+                if published_time:
+                    try:
+                        # Giữ nguyên thời gian từ RSS (đã ở múi giờ Việt Nam)
+                        parsed_time = parse_date(published_time)
+                        
+                        # Chuyển về UTC chỉ để so sánh với time_threshold
+                        time_for_comparison = parsed_time.astimezone(timezone.utc)
+                        
+                        if time_for_comparison >= time_threshold:
+                            articles.append({
+                                "title": entry.title,
+                                "link": entry.link,
+                                "summary_raw": summary_raw,
+                                "published_time": parsed_time.isoformat(),  # Lưu thời gian gốc
+                                "image_url": image_url,
+                                "source": source_name
+                            })
+                            seen_titles.add(norm_title)
+                            seen_links.add(link)
+                            entry_count += 1
+                    except (ValueError, TypeError):
+                        continue
+            
+            # Thêm vào danh sách thành công
+            successful_rss.append(f"{url} - {entry_count} bài viết")
+            print(f"    ✅ Thành công: {entry_count} bài viết")
+            
+        except Exception as e:
+            failed_rss.append(f"{url} - Lỗi: {str(e)}")
+            print(f"    ❌ Lỗi: {str(e)}")
+    
+    # Hiển thị tổng kết
+    print(f"\n📊 TỔNG KẾT RSS:")
+    print(f"✅ Thành công: {len(successful_rss)} RSS")
+    print(f"❌ Thất bại: {len(failed_rss)} RSS")
+    
+    if failed_rss:
+        print(f"\n❌ DANH SÁCH RSS THẤT BẠI:")
+        for failed in failed_rss:
+            print(f"  - {failed}")
+    
+    if successful_rss:
+        print(f"\n✅ DANH SÁCH RSS THÀNH CÔNG:")
+        for success in successful_rss:
+            print(f"  - {success}")
+    
+    print(f"\n-> Đã tìm thấy {len(articles)} bài viết mới (sau khi lọc trùng lặp).")
     return pd.DataFrame(articles)
 
 
