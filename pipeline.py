@@ -8,6 +8,8 @@ import sys
 import os # Thêm thư viện os
 from dotenv import load_dotenv
 import html
+from sklearn.metrics import silhouette_score
+import numpy as np
 # Xóa API key cũ từ biến môi trường nếu có
 if 'GOOGLE_API_KEY' in os.environ:
     del os.environ['GOOGLE_API_KEY']
@@ -353,9 +355,37 @@ def get_topic_labels(df, num_keywords=5):
         meaningful_name = generate_meaningful_topic_name(keywords, sample_titles)
         print(f"  - Cluster {i}: {keywords}  =>  Tên chủ đề: {meaningful_name}")
         topic_labels[str(i)] = meaningful_name
-        time.sleep(1)
+        time.sleep(4.1)
     print("-> Gán nhãn chủ đề hoàn tất.")
     return topic_labels
+
+def find_optimal_clusters(embeddings, max_clusters=20):
+    """Tìm số cụm (K) tối ưu bằng hệ số Silhouette.
+    
+    Args:
+        embeddings (numpy.ndarray): Ma trận embeddings của các bài viết
+        max_clusters (int): Số cụm tối đa cần xem xét (mặc định là 20)
+        
+    Returns:
+        int: Số cụm tối ưu (K) có hệ số Silhouette cao nhất
+    """
+    print("\n3. Đang tìm số cụm (K) tối ưu bằng hệ số Silhouette...")
+    
+    silhouette_scores = []
+    possible_k_values = range(2, max_clusters + 1)
+
+    for k in possible_k_values:
+        kmeans_temp = KMeans(n_clusters=k, random_state=42, n_init=10)
+        labels = kmeans_temp.fit_predict(embeddings)
+        score = silhouette_score(embeddings, labels)
+        silhouette_scores.append(score)
+
+    # Tự động tìm K có silhouette score cao nhất
+    best_k_index = np.argmax(silhouette_scores)
+    optimal_k = possible_k_values[best_k_index]
+
+    print(f"-> Đã tìm thấy số cụm tối ưu là K={optimal_k}")
+    return optimal_k
 
 def main_pipeline():
     """Hàm chính chạy toàn bộ quy trình."""
@@ -369,25 +399,8 @@ def main_pipeline():
     df = clean_text(df)
     embeddings = vectorize_text(df['summary_not_stop_word'].tolist(), SBERT_MODEL)
     
-    print("\n3. Đang tìm số cụm (K) tối ưu bằng hệ số Silhouette...")
-    from sklearn.metrics import silhouette_score
-    import numpy as np
-
-    silhouette_scores = []
-    # Đặt một giới hạn hợp lý, ví dụ không quá 20 chủ đề
-    possible_k_values = range(2, 20) 
-
-    for k in possible_k_values:
-        kmeans_temp = KMeans(n_clusters=k, random_state=42, n_init=10)
-        labels = kmeans_temp.fit_predict(embeddings)
-        score = silhouette_score(embeddings, labels)
-        silhouette_scores.append(score)
-
-    # Tự động tìm K có silhouette score cao nhất
-    best_k_index = np.argmax(silhouette_scores)
-    NUM_CLUSTERS = possible_k_values[best_k_index]
-
-    print(f"-> Đã tìm thấy số cụm tối ưu là K={NUM_CLUSTERS}")
+    # Thay thế đoạn code cũ bằng lời gọi hàm mới
+    NUM_CLUSTERS = find_optimal_clusters(embeddings)
     # -----------------------------------------------------------------------------
 
 
