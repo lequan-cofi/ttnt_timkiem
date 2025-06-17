@@ -578,7 +578,7 @@ else:
         for topic in topic_display_list:
             is_active = (topic == st.session_state.selected_topic)
             active_class = "active" if is_active else ""
-            icon = "📖" if topic != "Bài viết đã đọc" and topic != "Dựa trên lịch sử đọc" else "👁️" if topic == "Bài viết đã đọc" else "🎯"
+            icon = "📖" if topic != "Bài viết đã đọc" and topic != "Dựa trên lịch sử đọc" else "👀"if topic == "Bài viết đã đọc" else "🎯"
             if st.sidebar.button(f"{icon} {topic}", key=f"topic_{topic}", use_container_width=True):
                 st.session_state.selected_topic = topic
                 st.rerun()
