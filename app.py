@@ -44,7 +44,7 @@ def local_css(file_name):
     except FileNotFoundError:
         st.error(f"Lỗi: Không tìm thấy file '{file_name}'.")
 
-# --- HÀM TẢI DỮ LIỆU ---
+# ==== HÀM TẢI DỮ LIỆU ---
 @st.cache_data
 def load_data_and_embeddings():
     """Tải dữ liệu và embeddings từ các file."""
@@ -55,9 +55,10 @@ def load_data_and_embeddings():
     # Đọc nhãn chủ đề
     with open('topic_labels.json', 'r', encoding='utf-8') as f:
         topic_labels = json.load(f)
-    # Chuyển đổi thời gian và thêm tên nguồn
+    # Chuyển đổi thời gian
     df['published_time'] = pd.to_datetime(df['published_time'])
-    df['source_name'] = df['link'].apply(get_source_name)
+    # Sử dụng cột source trực tiếp từ CSV
+    df['source_name'] = df['source']
     # Đọc embeddings
     try:
         embeddings = np.load('embeddings.npy')
@@ -65,56 +66,6 @@ def load_data_and_embeddings():
         st.error("Không tìm thấy file embeddings.npy. Vui lòng chạy lại pipeline để tạo embeddings.")
         st.stop()
     return df, cosine_sim, topic_labels, embeddings
-
-def get_source_name(link):
-    """Trích xuất tên nguồn từ URL."""
-    try:
-        domain = urlparse(link).netloc
-        if domain.startswith('www.'): domain = domain[4:]
-        return domain.split('.')[0].capitalize()
-    except:
-        return "N/A"
-
-# --- CÁC HÀM HIỂN THỊ (RENDER) ---
-def render_main_grid(df, selected_topic_name):
-    """Hiển thị lưới bài viết chính."""
-    st.header(f"Bảng tin: {selected_topic_name}")
-    st.markdown(f"Tìm thấy **{len(df)}** bài viết liên quan.")
-    st.markdown("---")
-    
-    # Chia layout thành 3 cột
-    num_columns = 3
-    cols = st.columns(num_columns)
-    
-    if df.empty:
-        st.warning("Không có bài viết nào phù hợp với lựa chọn của bạn.")
-    else:
-        # Hiển thị từng bài viết
-        for i, (index, row) in enumerate(df.iterrows()):
-            with cols[i % num_columns]:
-                # Xử lý hình ảnh
-                image_html = ''
-                if pd.notna(row["image_url"]):
-                    image_html = f'<div class="card-image-container"><img src="{row["image_url"]}" onerror="this.onerror=null; this.src=\'no-image-png-2.webp\';"></div>'
-                else:
-                    image_html = '<div class="card-image-container"><img src="no-image-png-2.webp"></div>'
-                
-                # Tạo card bài viết
-                card_html = f"""<div class="article-card">
-                                {image_html}
-                                <div class="article-content">
-                                    <div class="article-title">{row['title']}</div>
-                                    <div class="article-source">{row['source_name']}</div>
-                                </div>
-                           </div>"""
-                st.markdown(card_html, unsafe_allow_html=True)
-                
-                # Nút đọc bài viết
-                if st.button("Đọc bài viết", key=f"read_{index}"):
-                    st.session_state.current_article_id = index
-                    st.session_state.current_view = "detail"
-                    st.rerun()
-
 
 def calculate_average_vector(article_ids, cosine_sim):
     """Tính vector trung bình từ 5 bài viết gần nhất."""
@@ -158,9 +109,6 @@ def get_similar_articles_by_history(df, cosine_sim, history_articles, exclude_ar
     similar_articles['similarity_score'] = similarity_scores[top_indices]
     
     return similar_articles
-
-
-
 
 def crawl_article_content(url):
     """Crawl nội dung bài viết từ URL và làm sạch HTML.
@@ -296,14 +244,7 @@ def crawl_article_content(url):
         return None
 
 def render_detail_view(article_id, df, cosine_sim, topic_labels):
-    """Hiển thị chi tiết bài viết và các bài viết liên quan.
-    
-    Hàm này thực hiện các nhiệm vụ:
-    1. Lấy thông tin bài viết từ DataFrame
-    2. Cập nhật lịch sử đọc
-    3. Hiển thị nội dung bài viết
-    4. Hiển thị các bài viết liên quan
-    """
+    """Hiển thị chi tiết bài viết và các bài viết liên quan."""
     try:
         # Lấy thông tin bài viết
         article = df.loc[article_id]
@@ -449,6 +390,10 @@ def render_detail_view(article_id, df, cosine_sim, topic_labels):
                             st.markdown('<img src="no-image-png-2.webp" style="width:100%;">', unsafe_allow_html=True)
                     with rec_col2:
                         if st.button(rec_article['title'], key=f"rec_{article_index}"):
+                            # Cập nhật lịch sử đọc cho bài viết được chọn
+                            st.session_state.read_articles.add(article_index)
+                            if article_index not in st.session_state.reading_history:
+                                st.session_state.reading_history.insert(0, article_index)
                             st.session_state.current_article_id = article_index
                             st.rerun()
                         st.caption(f"Nguồn: {rec_article['source_name']} | Độ tương đồng: {score:.2f}")
@@ -468,6 +413,10 @@ def render_detail_view(article_id, df, cosine_sim, topic_labels):
                             st.markdown('<img src="no-image-png-2.webp" style="width:100%;">', unsafe_allow_html=True)
                     with rec_col2:
                         if st.button(row['title'], key=f"rec_{i}"):
+                            # Cập nhật lịch sử đọc cho bài viết được chọn
+                            st.session_state.read_articles.add(i)
+                            if i not in st.session_state.reading_history:
+                                st.session_state.reading_history.insert(0, i)
                             st.session_state.current_article_id = i
                             st.rerun()
                         similarity_score = cosine_sim[article_id][i]
@@ -486,6 +435,46 @@ def render_search_results(query, df, embeddings, sbert_model):
         result_indices = [i[0] for i in sim_scores]
         result_df = df.iloc[result_indices].copy()
     render_main_grid(result_df, f"Kết quả cho: \"{query}\"")
+
+# ==== CÁC HÀM HIỂN THỊ (RENDER) ---
+def render_main_grid(df, selected_topic_name):
+    """Hiển thị lưới bài viết chính."""
+    st.header(f"Bảng tin: {selected_topic_name}")
+    st.markdown(f"Tìm thấy **{len(df)}** bài viết liên quan.")
+    st.markdown("---")
+    
+    # Chia layout thành 3 cột
+    num_columns = 3
+    cols = st.columns(num_columns)
+    
+    if df.empty:
+        st.warning("Không có bài viết nào phù hợp với lựa chọn của bạn.")
+    else:
+        # Hiển thị từng bài viết
+        for i, (index, row) in enumerate(df.iterrows()):
+            with cols[i % num_columns]:
+                # Xử lý hình ảnh
+                image_html = ''
+                if pd.notna(row["image_url"]):
+                    image_html = f'<div class="card-image-container"><img src="{row["image_url"]}" onerror="this.onerror=null; this.src=\'no-image-png-2.webp\';"></div>'
+                else:
+                    image_html = '<div class="card-image-container"><img src="no-image-png-2.webp"></div>'
+                
+                # Tạo card bài viết
+                card_html = f"""<div class="article-card">
+                                {image_html}
+                                <div class="article-content">
+                                    <div class="article-title">{row['title']}</div>
+                                    <div class="article-source">{row['source_name']}</div>
+                                </div>
+                           </div>"""
+                st.markdown(card_html, unsafe_allow_html=True)
+                
+                # Nút đọc bài viết
+                if st.button("Đọc bài viết", key=f"read_{index}"):
+                    st.session_state.current_article_id = index
+                    st.session_state.current_view = "detail"
+                    st.rerun()
 
 # --- LUỒNG CHÍNH CỦA ỨNG DỤNG ---
 local_css("style.css")
